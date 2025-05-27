@@ -1,40 +1,45 @@
 import { serveFile } from "https://deno.land/std@0.224.0/http/file_server.ts";
 import * as path from "https://deno.land/std@0.224.0/path/mod.ts";
 
-const NUM_SQUARES = 5;
-const DEFAULT_COLOR = "red";
-const KV_SQUARES_KEY = ["squares_colors"];
+const NUM_IMAGES = 5;
+const DEFAULT_IMAGE_SRCS = [
+  "/src/dageoff_2.png",
+  "/src/ergeoff.png",
+  "/src/sangeoff.png",
+  "/src/seigoroff.png",
+  "/src/kcOff.png",
+];
+const KV_IMAGES_KEY = ["images_srcs"];
 
 // --- Deno KV Setup ---
 const kv = await Deno.openKv();
 
-async function getSquareColors(): Promise<string[]> {
-  const entry = await kv.get<string[]>(KV_SQUARES_KEY);
+async function getImageSrcs(): Promise<string[]> {
+  const entry = await kv.get<string[]>(KV_IMAGES_KEY);
   if (entry.value) {
     return entry.value;
   }
   // Initialize if not found
-  const initialColors = Array(NUM_SQUARES).fill(DEFAULT_COLOR);
-  await kv.set(KV_SQUARES_KEY, initialColors);
-  return initialColors;
+  await kv.set(KV_IMAGES_KEY, DEFAULT_IMAGE_SRCS);
+  return [...DEFAULT_IMAGE_SRCS];
 }
 
-async function updateSquareColorInKV(
-  squareId: number,
-  newColor: string,
+async function updateImageSrcInKV(
+  imageId: number,
+  newSrc: string,
 ): Promise<boolean> {
-  if (squareId < 0 || squareId >= NUM_SQUARES) {
+  if (imageId < 0 || imageId >= NUM_IMAGES) {
     return false;
   }
-  const currentColors = await getSquareColors();
-  currentColors[squareId] = newColor;
+  const currentSrcs = await getImageSrcs();
+  currentSrcs[imageId] = newSrc;
   const res = await kv
     .atomic()
     .check({
-      key: KV_SQUARES_KEY,
-      versionstamp: (await kv.get(KV_SQUARES_KEY)).versionstamp,
+      key: KV_IMAGES_KEY,
+      versionstamp: (await kv.get(KV_IMAGES_KEY)).versionstamp,
     }) // Optimistic locking
-    .set(KV_SQUARES_KEY, currentColors)
+    .set(KV_IMAGES_KEY, currentSrcs)
     .commit();
   return res.ok;
 }
@@ -68,7 +73,7 @@ async function handler(req: Request): Promise<Response> {
 
   console.log(`[Request] ${req.method} ${pathname}`);
 
-  // 1. Serve static files from ./public
+  // Serve static files from ./public
   if (req.method === "GET") {
     if (pathname === "/" || pathname === "/index.html") {
       return serveFile(req, path.join(Deno.cwd(), "public", "index.html"));
@@ -76,9 +81,14 @@ async function handler(req: Request): Promise<Response> {
     if (pathname === "/script.js") {
       return serveFile(req, path.join(Deno.cwd(), "public", "script.js"));
     }
+    try {
+      return await serveFile(req, path.join(Deno.cwd(), "public", pathname));
+    } catch {
+      // fall through to 404
+    }
   }
 
-  // 2. SSE Endpoint
+  // SSE Endpoint
   if (req.method === "GET" && pathname === "/sse") {
     if (req.headers.get("accept") !== "text/event-stream") {
       return new Response("Expected Accept: text/event-stream", {
@@ -93,16 +103,16 @@ async function handler(req: Request): Promise<Response> {
         console.log(`SSE client connected: ${clientId}`);
 
         // Send initial state
-        getSquareColors()
-          .then((colors) => {
+        getImageSrcs()
+          .then((imageSrcs) => {
             const initialStateMsg = formatSSEMessage("initial-state", {
-              colors,
+              imageSrcs,
             });
             controller.enqueue(new TextEncoder().encode(initialStateMsg));
           })
           .catch((err) => {
             console.error(`Error sending initial state to ${clientId}:`, err);
-            controller.error(err); // Close the stream on error
+            controller.error(err); // Close stream on error
           });
       },
       cancel() {
@@ -120,8 +130,8 @@ async function handler(req: Request): Promise<Response> {
     });
   }
 
-  // 3. Update Color Endpoint
-  if (req.method === "POST" && pathname === "/update-color") {
+  // Update Image Endpoint
+  if (req.method === "POST" && pathname === "/update-image") {
     try {
       if (req.headers.get("content-type") !== "application/json") {
         return new Response(
@@ -132,61 +142,54 @@ async function handler(req: Request): Promise<Response> {
         );
       }
 
-      const { squareId, newColor } = await req.json();
+      const { imageId, newSrc } = await req.json();
 
-      if (typeof squareId !== "number" || typeof newColor !== "string") {
+      if (typeof imageId !== "number" || typeof newSrc !== "string") {
         return new Response(
           JSON.stringify({
             error:
-              "Invalid payload: squareId (number) and newColor (string) are required.",
+              "Invalid payload: imageId (number) and newSrc (string) are required.",
           }),
           { status: 400, headers: { "Content-Type": "application/json" } },
         );
       }
-      if (squareId < 0 || squareId >= NUM_SQUARES) {
-        return new Response(JSON.stringify({ error: "Invalid squareId." }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      // Basic color validation (can be more robust)
-      if (!["red", "green", "blue"].includes(newColor)) {
-        return new Response(JSON.stringify({ error: "Invalid color." }), {
+      if (imageId < 0 || imageId >= NUM_IMAGES) {
+        return new Response(JSON.stringify({ error: "Invalid imageId." }), {
           status: 400,
           headers: { "Content-Type": "application/json" },
         });
       }
 
-      const success = await updateSquareColorInKV(squareId, newColor);
+      const success = await updateImageSrcInKV(imageId, newSrc);
       if (!success) {
         // This could happen due to a concurrent update (versionstamp mismatch)
         console.warn(
-          `Failed to update KV for square ${squareId} to ${newColor}, likely due to concurrent modification.`,
+          `Failed to update KV for image ${imageId} to ${newSrc}, likely due to concurrent modification.`,
         );
         return new Response(
           JSON.stringify({
             error:
-              "Failed to update color, possibly due to a concurrent update. Please try again.",
+              "Failed to update image source, possibly due to a concurrent update. Please try again.",
           }),
           { status: 500, headers: { "Content-Type": "application/json" } },
         );
       }
 
-      console.log(`Updated square ${squareId} to ${newColor}`);
+      console.log(`Updated image ${imageId} to ${newSrc}`);
 
       // Broadcast the update to all SSE clients
-      const updateMessage = formatSSEMessage("color-update", {
-        squareId,
-        newColor,
+      const updateMessage = formatSSEMessage("image-update", {
+        imageId,
+        newSrc,
       });
       broadcastToSSEClients(updateMessage);
 
       return new Response(
-        JSON.stringify({ success: true, squareId, newColor }),
+        JSON.stringify({ success: true, imageId, newSrc }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
     } catch (error) {
-      console.error("Error processing /update-color:", error);
+      console.error("Error processing /update-image:", error);
       return new Response(
         JSON.stringify({ error: "Internal server error processing update." }),
         { status: 500, headers: { "Content-Type": "application/json" } },
@@ -194,15 +197,15 @@ async function handler(req: Request): Promise<Response> {
     }
   }
 
-  // 4. Not Found
+  // Not Found
   return new Response("Not Found", { status: 404 });
 }
 
-// --- Initialize and Start Server ---
+// Initialize and Start Server
 async function main() {
-  // Ensure initial colors are set in KV if they don't exist
-  await getSquareColors();
-  console.log("Initial square colors ensured in Deno KV.");
+  // Ensure initial image sources are set in KV if they don't exist
+  await getImageSrcs();
+  console.log("Initial image sources ensured in Deno KV.");
 
   const port = Deno.env.get("PORT") ? parseInt(Deno.env.get("PORT")!) : 8000;
   console.log(`HTTP server running. Access it at: http://localhost:${port}/`);
