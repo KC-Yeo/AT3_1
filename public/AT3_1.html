@@ -1,9 +1,30 @@
-<!doctype html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-    <title> Anyone Home? </title>
+    <meta charset="UTF-8">
+    <title>Anyone Home?</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 0;
+            background: #fffaec;
+        }
+        .sync-image {
+            border: 2px solid #333;
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: 0 0 8px #ccc;
+            user-select: none;
+            position: absolute;
+            width: 120px;
+            height: 120px;
+            cursor: pointer;
+        }
+    </style>
 </head>
-
 <body>
-   <canvas id="cnv_element"></canvas>
-   <script src="AT3_1.js"></script>
+    <h1 style="text-align:center;margin-top:30px;">Real-Time Image Sync</h1>
+    <p style="text-align:center;">Drag images or click to cycle. Changes sync in all open tabs/browsers.</p>
+    <script src="AT3_1.js"></script>
 </body>
+</html>
