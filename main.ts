@@ -2,8 +2,8 @@ import { serveFile } from "https://deno.land/std@0.224.0/http/file_server.ts";
 import * as path from "https://deno.land/std@0.224.0/path/mod.ts";
 
 const NUM_SQUARES = 5;
-const DEFAULT_COLOR = "red";
-const KV_SQUARES_KEY = ["squares_colors"];
+const DEFAULT_STATUS = "out";
+const KV_SQUARES_KEY = ["squares_status"];
 
 // --- Deno KV Setup ---
 const kv = await Deno.openKv();
@@ -14,27 +14,27 @@ async function getSquareColors(): Promise<string[]> {
     return entry.value;
   }
   // Initialize if not found
-  const initialColors = Array(NUM_SQUARES).fill(DEFAULT_COLOR);
+  const initialColors = Array(NUM_SQUARES).fill(DEFAULT_STATUS);
   await kv.set(KV_SQUARES_KEY, initialColors);
   return initialColors;
 }
 
 async function updateSquareColorInKV(
   squareId: number,
-  newColor: string,
+  newStatus: string,
 ): Promise<boolean> {
   if (squareId < 0 || squareId >= NUM_SQUARES) {
     return false;
   }
-  const currentColors = await getSquareColors();
-  currentColors[squareId] = newColor;
+  const currentStatus = await getSquareColors();
+  currentStatus[squareId] = newStatus;
   const res = await kv
     .atomic()
     .check({
       key: KV_SQUARES_KEY,
       versionstamp: (await kv.get(KV_SQUARES_KEY)).versionstamp,
     }) // Optimistic locking
-    .set(KV_SQUARES_KEY, currentColors)
+    .set(KV_SQUARES_KEY, currentStatus)
     .commit();
   return res.ok;
 }
@@ -121,7 +121,7 @@ async function handler(req: Request): Promise<Response> {
   }
 
   // 3. Update Color Endpoint
-  if (req.method === "POST" && pathname === "/update-color") {
+  if (req.method === "POST" && pathname === "/status-color") {
     try {
       if (req.headers.get("content-type") !== "application/json") {
         return new Response(
@@ -132,13 +132,13 @@ async function handler(req: Request): Promise<Response> {
         );
       }
 
-      const { squareId, newColor } = await req.json();
+      const { squareId, newStatus } = await req.json();
 
-      if (typeof squareId !== "number" || typeof newColor !== "string") {
+      if (typeof squareId !== "number" || typeof newStatus !== "string") {
         return new Response(
           JSON.stringify({
             error:
-              "Invalid payload: squareId (number) and newColor (string) are required.",
+              "Invalid payload: squareId (number) and newStatus (string) are required.",
           }),
           { status: 400, headers: { "Content-Type": "application/json" } },
         );
@@ -150,18 +150,18 @@ async function handler(req: Request): Promise<Response> {
         });
       }
       // Basic color validation (can be more robust)
-      if (!["red", "green", "blue"].includes(newColor)) {
-        return new Response(JSON.stringify({ error: "Invalid color." }), {
+      if (!["in", "out", "waiitng"].includes(newStatus)) {
+        return new Response(JSON.stringify({ error: "Invalid status." }), {
           status: 400,
           headers: { "Content-Type": "application/json" },
         });
       }
 
-      const success = await updateSquareColorInKV(squareId, newColor);
+      const success = await updateSquareColorInKV(squareId, newStatus);
       if (!success) {
         // This could happen due to a concurrent update (versionstamp mismatch)
         console.warn(
-          `Failed to update KV for square ${squareId} to ${newColor}, likely due to concurrent modification.`,
+          `Failed to update KV for square ${squareId} to ${newStatus}, likely due to concurrent modification.`,
         );
         return new Response(
           JSON.stringify({
@@ -172,21 +172,21 @@ async function handler(req: Request): Promise<Response> {
         );
       }
 
-      console.log(`Updated square ${squareId} to ${newColor}`);
+      console.log(`Updated square ${squareId} to ${newStatus}`);
 
       // Broadcast the update to all SSE clients
-      const updateMessage = formatSSEMessage("color-update", {
+      const updateMessage = formatSSEMessage("status-update", {
         squareId,
-        newColor,
+        newStatus,
       });
       broadcastToSSEClients(updateMessage);
 
       return new Response(
-        JSON.stringify({ success: true, squareId, newColor }),
+        JSON.stringify({ success: true, squareId, newStatus }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
     } catch (error) {
-      console.error("Error processing /update-color:", error);
+      console.error("Error processing /update-status:", error);
       return new Response(
         JSON.stringify({ error: "Internal server error processing update." }),
         { status: 500, headers: { "Content-Type": "application/json" } },

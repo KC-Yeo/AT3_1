@@ -10,38 +10,38 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    const COLORS = ["red", "green", "blue"];
-    const API_ENDPOINT = "/update-color";
+    const STATUSES= ["in", "out", "waiting"];
+    const API_ENDPOINT = "/update-status";
     const SSE_ENDPOINT = "/sse";
+    const HOUSES = [ "Seng", "Meng", "Weng", "Fei", "KC" ]
 
     // Function to update a single square's color
-    function updateSquareColor(squareId, newColor) {
-        const squareElement = document.getElementById(`square-${squareId}`);
+    function updateSquareColor(squareId, newStatus) {
+        const squareElement = document.getElementById(`/src/-${ HOUSES[squareId] }/ ${ [newStatus].png }`);
         if (squareElement) {
-            squareElement.style.backgroundColor = newColor;
+            squareElement.style.backgroundColor = newStatus;
         }
     }
 
     // Attach click listeners to squares
     squares.forEach((square, index) => {
         square.addEventListener('click', async () => {
-            const currentBgColor = square.style.backgroundColor;
-            // Normalize color name if it comes as rgb()
-            let currentColorIndex = COLORS.indexOf(currentBgColor);
+            const currentStatus = square.scr.split('/').pop().split('.')[0];
+            const currentIndex = STATUSES.indexOf(currentStatus);
 
-            if (currentColorIndex === -1) {
-                // Fallback for rgb() values - this is a simple check, might need robust parsing
-                if (currentBgColor.includes('255, 0, 0')) currentColorIndex = COLORS.indexOf('red');
-                else if (currentBgColor.includes('0, 128, 0')) currentColorIndex = COLORS.indexOf('green'); // 'green' is rgb(0,128,0)
-                else if (currentBgColor.includes('0, 0, 255')) currentColorIndex = COLORS.indexOf('blue');
-                else { // Default to first color if unknown
-                    console.warn(`Unknown current color: ${currentBgColor}, defaulting.`);
-                    currentColorIndex = -1; // To make next color the first one
-                }
-            }
+            // if (currentStatus === -1) {
+            //     // Fallback for rgb() values - this is a simple check, might need robust parsing
+            //     if (currentBgColor.includes('255, 0, 0')) currentColorIndex = STATUS.indexOf('in');
+            //     else if (currentBgColor.includes('0, 128, 0')) currentColorIndex = STATUS.indexOf('out'); // 'green' is rgb(0,128,0)
+            //     else if (currentBgColor.includes('0, 0, 255')) currentColorIndex = STATUS.indexOf('waiting');
+            //     else { // Default to first color if unknown
+            //         console.warn(`Unknown current color: ${currentBgColor}, defaulting.`);
+            //         currentColorIndex = -1; // To make next color the first one
+            //     }
+            // }
 
-            const nextColorIndex = (currentColorIndex + 1) % COLORS.length;
-            const newColor = COLORS[nextColorIndex];
+            const newIndex = (currentIndex + 1) % STATUSES.length;
+            const newStatus = STATUSES[newIndex];
 
             try {
                 const response = await fetch(API_ENDPOINT, {
@@ -49,7 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ squareId: index, newColor: newColor }),
+                    body: JSON.stringify({ squareId: index, newStatus: newStatus }),
                 });
 
                 if (!response.ok) {
@@ -70,10 +70,10 @@ document.addEventListener('DOMContentLoaded', () => {
     eventSource.addEventListener('initial-state', (event) => {
         try {
             const data = JSON.parse(event.data);
-            if (data && Array.isArray(data.colors)) {
-                console.log('Received initial state:', data.colors);
-                data.colors.forEach((color, i) => {
-                    updateSquareColor(i, color);
+            if (data && Array.isArray(data.statuses)) {
+                console.log('Received initial state:', data.statuses);
+                data.statuses.forEach((status, i) => {
+                    updateSquareColor(i, status);
                 });
             } else {
                  console.error('Invalid initial-state data format:', event.data);
@@ -83,12 +83,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    eventSource.addEventListener('color-update', (event) => {
+    eventSource.addEventListener('status-update', (event) => {
         try {
             const data = JSON.parse(event.data);
-             if (data && typeof data.squareId === 'number' && typeof data.newColor === 'string') {
+             if (data && typeof data.squareId === 'number' && typeof data.newStatus === 'string') {
                 console.log('Received color update:', data);
-                updateSquareColor(data.squareId, data.newColor);
+                updateSquareColor(data.squareId, data.newStatus);
             } else {
                 console.error('Invalid color-update data format:', event.data);
             }
