@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const squaresContainer = document.querySelector('.squares-container');
+    // const squaresContainer = document.querySelector('.squares-container');
     const squares = [];
     for (let i = 0; i < 5; i++) {
         const square = document.getElementById(`square-${i}`);
@@ -16,17 +16,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const HOUSES = [ "Seng", "Meng", "Weng", "Fei", "KC" ]
 
     // Function to update a single square's color
-    function updateSquareColor(squareId, newStatus) {
-        const squareElement = document.getElementById(`/src/-${ HOUSES[squareId] }/ ${ [newStatus].png }`);
+    function updateSquareStatus(squareId, newStatus) {
+        const squareElement = document.getElementById (`square-${squareId}`);
+
         if (squareElement) {
-            squareElement.style.backgroundColor = newStatus;
+            const imagePath = `/src/${ HOUSES[squareId] }/${ newStatus }.png`;
+            squareElement.src = imagePath;
+            console.log(`Updated square=${squareId} to ${imagePath}`);
+        } else {
+            console.error(`Error: Element with ID 'square-${squareId}' not found for update`);
         }
+    //     const squareElement = document.getElementById(`/src/${ HOUSES[squareId] }/${ [newStatus].png }`);
+    //     if (squareElement) {
+    //         squareElement.src = newStatus;
+    //     }
     }
 
     // Attach click listeners to squares
     squares.forEach((square, index) => {
         square.addEventListener('click', async () => {
-            const currentStatus = square.scr.split('/').pop().split('.')[0];
+            const currentStatus = square.src.split('/').pop().split('.')[0];
             const currentIndex = STATUSES.indexOf(currentStatus);
 
             // if (currentStatus === -1) {
@@ -54,7 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (!response.ok) {
                     const errorData = await response.json();
-                    console.error('Failed to update color:', response.status, errorData.error);
+                    console.error('Failed to update status:', response.status, errorData.error);
                     // Optionally revert optimistic update or show error to user
                 }
                 // Color update will be handled by SSE event
@@ -70,10 +79,10 @@ document.addEventListener('DOMContentLoaded', () => {
     eventSource.addEventListener('initial-state', (event) => {
         try {
             const data = JSON.parse(event.data);
-            if (data && Array.isArray(data.statuses)) {
-                console.log('Received initial state:', data.statuses);
-                data.statuses.forEach((status, i) => {
-                    updateSquareColor(i, status);
+            if (data && Array.isArray(data.status)) {
+                console.log('Received initial state:', data.status);
+                data.status.forEach((status, i) => {
+                    updateSquareStatus(i, status);
                 });
             } else {
                  console.error('Invalid initial-state data format:', event.data);
@@ -83,17 +92,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    eventSource.addEventListener('status-update', (event) => {
+    eventSource.addEventListener('update-status', (event) => {
         try {
             const data = JSON.parse(event.data);
              if (data && typeof data.squareId === 'number' && typeof data.newStatus === 'string') {
-                console.log('Received color update:', data);
-                updateSquareColor(data.squareId, data.newStatus);
+                console.log('Received status update:', data);
+                updateSquareStatus(data.squareId, data.newStatus);
             } else {
-                console.error('Invalid color-update data format:', event.data);
+                console.error('Invalid update-status data format:', event.data);
             }
         } catch (e) {
-            console.error('Error parsing color-update event data:', e, event.data);
+            console.error('Error parsing update-status event data:', e, event.data);
         }
     });
 

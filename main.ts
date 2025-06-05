@@ -8,7 +8,7 @@ const KV_SQUARES_KEY = ["squares_status"];
 // --- Deno KV Setup ---
 const kv = await Deno.openKv();
 
-async function getSquareColors(): Promise<string[]> {
+async function getSquareStatus(): Promise<string[]> {
   const entry = await kv.get<string[]>(KV_SQUARES_KEY);
   if (entry.value) {
     return entry.value;
@@ -19,14 +19,14 @@ async function getSquareColors(): Promise<string[]> {
   return initialColors;
 }
 
-async function updateSquareColorInKV(
+async function updateSquareStatusInKV(
   squareId: number,
   newStatus: string,
 ): Promise<boolean> {
   if (squareId < 0 || squareId >= NUM_SQUARES) {
     return false;
   }
-  const currentStatus = await getSquareColors();
+  const currentStatus = await getSquareStatus();
   currentStatus[squareId] = newStatus;
   const res = await kv
     .atomic()
@@ -68,16 +68,6 @@ async function handler(req: Request): Promise<Response> {
 
   console.log(`[Request] ${req.method} ${pathname}`);
 
-  // 1. Serve static files from ./public
-  if (req.method === "GET") {
-    if (pathname === "/" || pathname === "/index.html") {
-      return serveFile(req, path.join(Deno.cwd(), "public", "index.html"));
-    }
-    if (pathname === "/script.js") {
-      return serveFile(req, path.join(Deno.cwd(), "public", "script.js"));
-    }
-  }
-
   // 2. SSE Endpoint
   if (req.method === "GET" && pathname === "/sse") {
     if (req.headers.get("accept") !== "text/event-stream") {
@@ -93,10 +83,10 @@ async function handler(req: Request): Promise<Response> {
         console.log(`SSE client connected: ${clientId}`);
 
         // Send initial state
-        getSquareColors()
-          .then((colors) => {
+        getSquareStatus()
+          .then((status) => {
             const initialStateMsg = formatSSEMessage("initial-state", {
-              colors,
+              status,
             });
             controller.enqueue(new TextEncoder().encode(initialStateMsg));
           })
@@ -118,12 +108,14 @@ async function handler(req: Request): Promise<Response> {
         Connection: "keep-alive",
       },
     });
+
   }
 
   // 3. Update Color Endpoint
-  if (req.method === "POST" && pathname === "/status-color") {
+  if (req.method === "POST" && pathname === "/update-status") {
     try {
       if (req.headers.get("content-type") !== "application/json") {
+         console.log("--> Entered POST /update-status handler.");
         return new Response(
           JSON.stringify({
             error: "Invalid content type, expected application/json",
@@ -150,14 +142,14 @@ async function handler(req: Request): Promise<Response> {
         });
       }
       // Basic color validation (can be more robust)
-      if (!["in", "out", "waiitng"].includes(newStatus)) {
+      if (!["out", "in", "waiting"].includes(newStatus)) {
         return new Response(JSON.stringify({ error: "Invalid status." }), {
           status: 400,
           headers: { "Content-Type": "application/json" },
         });
       }
 
-      const success = await updateSquareColorInKV(squareId, newStatus);
+      const success = await updateSquareStatusInKV(squareId, newStatus);
       if (!success) {
         // This could happen due to a concurrent update (versionstamp mismatch)
         console.warn(
@@ -175,7 +167,7 @@ async function handler(req: Request): Promise<Response> {
       console.log(`Updated square ${squareId} to ${newStatus}`);
 
       // Broadcast the update to all SSE clients
-      const updateMessage = formatSSEMessage("status-update", {
+      const updateMessage = formatSSEMessage("update-status", {
         squareId,
         newStatus,
       });
@@ -194,6 +186,45 @@ async function handler(req: Request): Promise<Response> {
     }
   }
 
+  // 1. Serve static files from ./public
+  if (req.method === "GET") {
+    let filePath: string;
+
+    if (pathname === "/" || pathname === "/index.html") {
+      filePath = path.join(Deno.cwd(), "public", "index.html");
+      console.log(`Attempting to serve indexedDB.html from ${filePath}`);
+    } else {
+      filePath = path.join(Deno.cwd(), "public", pathname);
+      console.log(`Attempting to serve static file from: ${filePath}`);
+    }
+
+    try {
+      const fileInfo = await Deno.stat(filePath);
+      if (fileInfo.isFile) {
+        console.log(`File found, serving: ${filePath}`);
+        return serveFile(req, filePath);
+      } else {
+        console.log(`Path exists but is is not a file (it's a directory): ${filePath}`);
+      }
+    } catch (error) {
+      if (error instanceof Deno.errors.NotFound) {
+        console.log(`File NOT FOUND at: ${filePath}`);
+      } else {
+        console.error(`Error serving file ${filePath}:`, error);
+        return new Response("Internal Server Error", { status: 500 });
+      }
+    }
+    // if (pathname === "/" || pathname === "/index.html") {
+    //   return serveFile(req, path.join(Deno.cwd(), "public", "index.html"));
+    // }
+    // if (pathname === "/script.js") {
+    //   return serveFile(req, path.join(Deno.cwd(), "public", "script.js"));
+    // }
+    // if (pathname.startsWith("/src/")) {
+    //   const filePath = path.join(Deno.cwd(), "public", pathname);
+    // }
+  }
+
   // 4. Not Found
   return new Response("Not Found", { status: 404 });
 }
@@ -201,7 +232,7 @@ async function handler(req: Request): Promise<Response> {
 // --- Initialize and Start Server ---
 async function main() {
   // Ensure initial colors are set in KV if they don't exist
-  await getSquareColors();
+  await getSquareStatus();
   console.log("Initial square colors ensured in Deno KV.");
 
   const port = Deno.env.get("PORT") ? parseInt(Deno.env.get("PORT")!) : 8000;
