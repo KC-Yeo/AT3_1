@@ -26,50 +26,28 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             console.error(`Error: Element with ID 'square-${squareId}' not found for update`);
         }
-    //     const squareElement = document.getElementById(`/src/${ HOUSES[squareId] }/${ [newStatus].png }`);
-    //     if (squareElement) {
-    //         squareElement.src = newStatus;
-    //     }
     }
 
     // Attach click listeners to squares
     squares.forEach((square, index) => {
-        square.addEventListener('click', async () => {
+        square.addEventListener('click', () => {
             const currentStatus = square.src.split('/').pop().split('.')[0];
             const currentIndex = STATUSES.indexOf(currentStatus);
-
-            // if (currentStatus === -1) {
-            //     // Fallback for rgb() values - this is a simple check, might need robust parsing
-            //     if (currentBgColor.includes('255, 0, 0')) currentColorIndex = STATUS.indexOf('in');
-            //     else if (currentBgColor.includes('0, 128, 0')) currentColorIndex = STATUS.indexOf('out'); // 'green' is rgb(0,128,0)
-            //     else if (currentBgColor.includes('0, 0, 255')) currentColorIndex = STATUS.indexOf('waiting');
-            //     else { // Default to first color if unknown
-            //         console.warn(`Unknown current color: ${currentBgColor}, defaulting.`);
-            //         currentColorIndex = -1; // To make next color the first one
-            //     }
-            // }
-
             const newIndex = (currentIndex + 1) % STATUSES.length;
             const newStatus = STATUSES[newIndex];
 
-            try {
-                const response = await fetch(API_ENDPOINT, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ squareId: index, newStatus: newStatus }),
-                });
-
+            fetch(API_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ squareId: index, newStatus }),
+            }).then(async response => {
                 if (!response.ok) {
                     const errorData = await response.json();
                     console.error('Failed to update status:', response.status, errorData.error);
-                    // Optionally revert optimistic update or show error to user
                 }
-                // Color update will be handled by SSE event
-            } catch (error) {
+            }) .catch(error => {
                 console.error('Error sending update request:', error);
-            }
+            });
         });
     });
 
